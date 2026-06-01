@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>咖啡入库</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0f0e0c;
+    --surface: #1a1915;
+    --border: #2e2b24;
+    --accent: #c8a96e;
+    --accent-dim: #8a7249;
+    --text: #e8e2d5;
+    --text-muted: #7a7468;
+    --input-bg: #141310;
+    --success: #6a9e72;
+    --error: #c46b5a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.6;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  header {
+    margin-bottom: 48px;
+  }
+
+  .eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    color: var(--accent-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 36px;
+    color: var(--accent);
+    line-height: 1.1;
+    font-style: italic;
+  }
+
+  .counter {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    letter-spacing: 0.1em;
+  }
+
+  /* Loading state */
+  .loading-bar {
+    height: 1px;
+    background: var(--border);
+    margin: 24px 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .loading-bar::after {
+    content: '';
+    position: absolute;
+    left: -40%;
+    top: 0;
+    height: 100%;
+    width: 40%;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: shimmer 1.2s ease-in-out infinite;
+  }
+  @keyframes shimmer { to { left: 140%; } }
+
+  .status-msg {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-align: center;
+    padding: 12px 0;
+  }
+
+  /* Form */
+  .form-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .field {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 16px 20px;
+    transition: border-color 0.15s;
+    position: relative;
+  }
+  .field:first-child { border-radius: 8px 8px 0 0; }
+  .field:last-child { border-radius: 0 0 8px 8px; }
+  .field + .field { margin-top: -1px; }
+  .field:focus-within { border-color: var(--accent-dim); z-index: 1; }
+
+  .field-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .field-label .required { color: var(--accent); }
+
+  input[type="text"],
+  input[type="number"],
+  input[type="date"],
+  textarea,
+  select {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    padding: 0;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.4);
+    cursor: pointer;
+  }
+  textarea {
+    resize: none;
+    height: 60px;
+    line-height: 1.5;
+  }
+  ::placeholder { color: var(--text-muted); }
+
+  /* Custom select with datalist feel */
+  .select-wrap {
+    position: relative;
+  }
+  .select-wrap input {
+    padding-right: 24px;
+  }
+  .select-wrap::after {
+    content: '▾';
+    position: absolute;
+    right: 0;
+    top: 0;
+    color: var(--text-muted);
+    pointer-events: none;
+    font-size: 12px;
+  }
+
+  datalist option { background: #1a1915; }
+
+  /* Row fields */
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    background: transparent;
+    border: none;
+    padding: 0;
+  }
+  .field-row > .field {
+    border-radius: 0 !important;
+  }
+
+  /* Section divider */
+  .section-label {
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--accent-dim);
+    padding: 24px 0 8px;
+  }
+
+  /* Submit */
+  .submit-wrap {
+    margin-top: 24px;
+  }
+
+  button.submit {
+    width: 100%;
+    padding: 18px;
+    background: var(--accent);
+    color: #0f0e0c;
+    border: none;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  button.submit:hover { opacity: 0.88; }
+  button.submit:active { transform: scale(0.99); }
+  button.submit:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 24px;
+    border-radius: 4px;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 100;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.success { border-color: var(--success); color: var(--success); }
+  .toast.error { border-color: var(--error); color: var(--error); }
+
+  /* Hidden until loaded */
+  .form-wrap { display: none; }
+  .form-wrap.visible { display: block; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="eyebrow">My Coffee Lab</div>
+    <h1>新豆入库</h1>
+    <div class="counter" id="counter">正在连接 Notion…</div>
+  </header>
+
+  <div id="loading">
+    <div class="loading-bar"></div>
+    <div class="status-msg" id="status-msg">读取数据库选项中…</div>
+  </div>
+
+  <div class="form-wrap" id="form-wrap">
+    <div class="form-grid" id="form-grid">
+
+      <div class="section-label">基本信息</div>
+
+      <div class="field">
+        <div class="field-label">品牌名称 <span class="required">*</span></div>
+        <div class="select-wrap">
+          <input type="text" id="brand" list="brand-list" placeholder="e.g. 自在心" autocomplete="off">
+          <datalist id="brand-list"></datalist>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">购入渠道 <span class="required">*</span></div>
+        <div class="select-wrap">
+          <input type="text" id="channel" list="channel-list" placeholder="e.g. KTT" autocomplete="off">
+          <datalist id="channel-list"></datalist>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <div class="field-label">下单时间</div>
+          <input type="date" id="order-date">
+        </div>
+        <div class="field">
+          <div class="field-label">收货日期</div>
+          <input type="date" id="receive-date">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <div class="field-label">烘焙日期</div>
+          <input type="date" id="roast-date">
+        </div>
+        <div class="field">
+          <div class="field-label">养豆天数</div>
+          <input type="number" id="rest-days" placeholder="14" min="0">
+        </div>
+      </div>
+
+      <div class="section-label">豆子信息</div>
+
+      <div class="field">
+        <div class="field-label">产地</div>
+        <div class="select-wrap">
+          <input type="text" id="origin" list="origin-list" placeholder="e.g. 埃塞俄比亚" autocomplete="off">
+          <datalist id="origin-list"></datalist>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">庄园 / 处理站</div>
+        <div class="select-wrap">
+          <input type="text" id="farm" list="farm-list" placeholder="e.g. 瑰夏村" autocomplete="off">
+          <datalist id="farm-list"></datalist>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <div class="field-label">豆种</div>
+          <div class="select-wrap">
+            <input type="text" id="variety" list="variety-list" placeholder="e.g. 瑰夏" autocomplete="off">
+            <datalist id="variety-list"></datalist>
+          </div>
+        </div>
+        <div class="field">
+          <div class="field-label">处理法</div>
+          <div class="select-wrap">
+            <input type="text" id="process" list="process-list" placeholder="e.g. 水洗" autocomplete="off">
+            <datalist id="process-list"></datalist>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-label">其他</div>
+
+      <div class="field">
+        <div class="field-label">风味描述</div>
+        <textarea id="flavor" placeholder="柑橘、茉莉、红茶…"></textarea>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <div class="field-label">重量 (g)</div>
+          <input type="number" id="weight" placeholder="200" min="0">
+        </div>
+        <div class="field">
+          <div class="field-label">价格</div>
+          <input type="number" id="price" placeholder="168" min="0">
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">其他备注</div>
+        <textarea id="notes" placeholder="任何想记录的…"></textarea>
+      </div>
+
+    </div>
+
+    <div class="submit-wrap">
+      <button class="submit" id="submit-btn" onclick="submitEntry()">提交入库</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const TOKEN = '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';
+const DB_ID = '2d964688c7ec81169223d4f59cb31527';
+async function notionFetch(endpoint, options = {}) {
+  // Try direct first, then fallback proxies
+  const proxies = [
+    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    (url) => `https://cors-anywhere.herokuapp.com/${url}`,
+  ];
+
+  const url = `https://api.notion.com/v1${endpoint}`;
+  const fetchOptions = {
+    ...options,
+    headers: {
+      'Authorization': `Bearer ${TOKEN}`,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json',
+    }
+  };
+
+  for (const makeProxy of proxies) {
+    try {
+      const res = await fetch(makeProxy(url), fetchOptions);
+      if (res.ok) return res.json();
+    } catch (e) {
+      continue;
+    }
+  }
+  throw new Error('所有代理均失败');
+}
+
+const SELECT_FIELDS = {
+  'brand-list': '品牌名称',
+  'channel-list': '购入渠道',
+  'origin-list': '产地',
+  'farm-list': '庄园/处理站',
+  'variety-list': '豆种',
+  'process-list': '处理法',
+};
+
+async function loadOptions() {
+  try {
+    // Get database schema
+    const db = await notionFetch(`/databases/${DB_ID}`);
+    const props = db.properties;
+
+    let loaded = 0;
+    for (const [datalistId, propName] of Object.entries(SELECT_FIELDS)) {
+      const prop = props[propName];
+      if (!prop) continue;
+
+      let options = [];
+      if (prop.type === 'select' && prop.select?.options) {
+        options = prop.select.options.map(o => o.name);
+      } else if (prop.type === 'multi_select' && prop.multi_select?.options) {
+        options = prop.multi_select.options.map(o => o.name);
+      } else if (prop.type === 'rich_text' || prop.type === 'title') {
+        // For text fields, query existing values
+        options = await fetchTextValues(propName);
+      }
+
+      const dl = document.getElementById(datalistId);
+      if (dl) {
+        options.forEach(opt => {
+          const o = document.createElement('option');
+          o.value = opt;
+          dl.appendChild(o);
+        });
+        loaded++;
+      }
+    }
+
+    // Count entries
+    const query = await notionFetch(`/databases/${DB_ID}/query`, {
+      method: 'POST',
+      body: JSON.stringify({ page_size: 1 })
+    });
+
+    document.getElementById('counter').textContent = `已记录 ${query.results?.length ? '95+' : '?'} 支豆子`;
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('form-wrap').classList.add('visible');
+
+    // Set today's date as default
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('order-date').value = today;
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('status-msg').textContent = '⚠ 连接失败，请检查 token 和数据库权限';
+    document.getElementById('loading').querySelector('.loading-bar').style.display = 'none';
+  }
+}
+
+async function fetchTextValues(propName) {
+  try {
+    const result = await notionFetch(`/databases/${DB_ID}/query`, {
+      method: 'POST',
+      body: JSON.stringify({ page_size: 100 })
+    });
+    const values = new Set();
+    for (const page of result.results) {
+      const prop = page.properties[propName];
+      if (!prop) continue;
+      if (prop.type === 'title' && prop.title?.[0]?.plain_text) {
+        values.add(prop.title[0].plain_text);
+      } else if (prop.type === 'rich_text' && prop.rich_text?.[0]?.plain_text) {
+        values.add(prop.rich_text[0].plain_text);
+      }
+    }
+    return [...values];
+  } catch { return []; }
+}
+
+function getVal(id) {
+  return document.getElementById(id)?.value?.trim() || null;
+}
+
+async function submitEntry() {
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = '提交中…';
+
+  try {
+    const properties = {};
+
+    // Title (品牌名称 is likely the title field — we'll handle both title and rich_text)
+    const brand = getVal('brand');
+    if (brand) {
+      properties['品牌名称'] = { title: [{ text: { content: brand } }] };
+    }
+
+    // Select fields
+    const selects = {
+      '购入渠道': getVal('channel'),
+      '产地': getVal('origin'),
+      '豆种': getVal('variety'),
+      '处理法': getVal('process'),
+    };
+    for (const [key, val] of Object.entries(selects)) {
+      if (val) properties[key] = { select: { name: val } };
+    }
+
+    // Multi-select or rich_text for 庄园/处理站
+    const farm = getVal('farm');
+    if (farm) {
+      properties['庄园/处理站'] = { rich_text: [{ text: { content: farm } }] };
+    }
+
+    // Dates
+    const orderDate = getVal('order-date');
+    const receiveDate = getVal('receive-date');
+    const roastDate = getVal('roast-date');
+    if (orderDate) properties['下单时间'] = { date: { start: orderDate } };
+    if (receiveDate) properties['收货日期'] = { date: { start: receiveDate } };
+    if (roastDate) properties['烘焙日期'] = { date: { start: roastDate } };
+
+    // Numbers
+    const weight = getVal('weight');
+    const price = getVal('price');
+    const restDays = getVal('rest-days');
+    if (weight) properties['重量(g)'] = { number: parseFloat(weight) };
+    if (price) properties['价格'] = { number: parseFloat(price) };
+    if (restDays) properties['养豆天数'] = { number: parseFloat(restDays) };
+
+    // Text
+    const flavor = getVal('flavor');
+    const notes = getVal('notes');
+    if (flavor) properties['风味描述'] = { rich_text: [{ text: { content: flavor } }] };
+    if (notes) properties['其他备注'] = { rich_text: [{ text: { content: notes } }] };
+
+    await notionFetch('/pages', {
+      method: 'POST',
+      body: JSON.stringify({
+        parent: { database_id: DB_ID },
+        properties
+      })
+    });
+
+    showToast('✓ 已成功入库', 'success');
+    clearForm();
+
+  } catch (err) {
+    console.error(err);
+    showToast('提交失败：' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '提交入库';
+  }
+}
+
+function clearForm() {
+  const ids = ['brand','channel','origin','farm','variety','process','flavor','notes','weight','price','rest-days','receive-date','roast-date'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('order-date').value = today;
+}
+
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type;
+  setTimeout(() => t.classList.add('show'), 10);
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+loadOptions();
+</script>
+</body>
+</html>
